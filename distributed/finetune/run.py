@@ -10,18 +10,15 @@ def setup_distributed(rank, world_size, backend='nccl'):
         world_size (int): Total number of processes (nodes x gpus per node).
         backend (str): Backend to use ('nccl', 'gloo', or 'mpi').
     """
-    # dist.init_process_group(
-    #     backend=backend,
-    #     init_method='env://',  # Environment variable initialization
-    #     rank=rank,
-    #     world_size=world_size,
-    # )
-    print(f"Rank {rank}/{world_size} initialized.")
+    dist.init_process_group(
+        backend=backend,
+        rank=rank,
+        world_size=world_size,
+    )
 
 def cleanup_distributed():
     """Clean up the distributed environment."""
-    # dist.destroy_process_group()
-    pass
+    dist.destroy_process_group()
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch Distributed Template")
@@ -34,6 +31,7 @@ def main():
     setup_distributed(args.rank, args.world_size, args.backend)
 
     # Insert your training code here
+    print("RUNNING...")
 
     # Clean up the distributed environment
     cleanup_distributed()

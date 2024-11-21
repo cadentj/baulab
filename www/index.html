@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bau Cluster Status</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="shortcut icon" type="image/png" href="favicon.png">
+    <style>
+        body {
+            color: #CECDC3;
+            background-color: #100F0F;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        #last-updated {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #ccc;
+        }
+        #info {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 10px;
+            color: #aaa;
+        }
+        .machines-container {
+            display: grid;
+            grid-template-columns: repeat(2, auto);
+            gap: 20px;
+            justify-content: center;
+            padding: 0 20px;
+        }
+        .machine {
+            position: relative;
+            background-color: #100F0F;
+            border: 1px solid #282726;
+            border-radius: 4px;
+            padding: 15px;
+            height: max-content;
+            min-width: 300px;
+            width: -webkit-max-content;
+            width: -moz-max-content;
+            width: max-content;
+            box-sizing: border-box;
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+        }
+        .machine:hover {
+            background-color: #282726;
+        }
+        .machine-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .machine-header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .memory-info {
+            font-size: 14px;
+            color: #ccc;
+            white-space: nowrap;
+        }
+        .machine-header h3 {
+            margin: 0;
+            margin-right: 10px;
+            font-size: 16px;
+        }
+        .dot {
+            height: 10px; /* Increased size for better visibility */
+            width: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+
+        }
+        .dot.green {
+            background-color: #66800B;
+        }
+        .dot.red {
+            background-color: #AF3029;
+        }
+        pre {
+            background-color: #282726;
+            overflow: auto;
+            max-height: 400px;
+            white-space: pre-wrap; /* Allows long lines to wrap */
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
+            width: 100%;
+            visibility: hidden;
+            height: 0;
+            margin: 0;
+            transition: height 0.2s ease-out, margin 0.2s ease-out;
+            border-radius: 4px;
+            border: 1px solid #282726;
+        }
+        
+        /* Chrome, Safari and Opera */
+        pre::-webkit-scrollbar {
+            display: none;
+        }
+        .title-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .title-container h1 {
+            margin: 0;
+        }
+        
+        .title-container img {
+            width: 32px;
+            height: 32px;
+        }
+        .machine.expanded pre {
+            visibility: visible;
+            height: max-content;
+            margin-top: 10px;
+            padding: 10px 0;
+        }
+        .machine.expanded {
+            background-color: #282726;
+        }
+        #gpuChartContainer {
+            width: 50%;
+            margin: 20px auto;
+            height: 300px;
+        }
+        #gpuChart {
+            margin-bottom: 30px;
+            background-color: #100F0F;
+            padding: 15px;
+            border: 1px solid #282726;
+            border-radius: 4px;
+        }
+        /* Responsive Styles */
+        @media (max-width: 768px) {
+            .machines-container {
+                grid-template-columns: 1fr;
+            }
+            .machine {
+                width: 100%;
+                min-width: unset;
+            }
+            pre {
+                display: none;
+            }
+            #gpuChartContainer {
+                width: 90%;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="title-container">
+        <img src="favicon.png" alt="Cluster Status Icon">
+        <h1>Bau Cluster Status</h1>
+    </div>
+    <div id="last-updated"><b>Last Updated</b>: Loading...</div>
+    <div id="info"><i>Refreshes every 10 minutes. GPUs are considered occupied if more than 10% of memory is used.</i></div>
+    <div id="gpuChartContainer">
+        <canvas id="gpuChart"></canvas>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 20px;">
+        <span id="expand-all" style="cursor: pointer;">
+            Expand All +
+        </span>
+    </div>
+    <div class="machines-container" id="machines-container">
+        <!-- Machines will be dynamically inserted here -->
+    </div>
+
+    <script>
+        function createGPUChart(machines) {
+            const ctx = document.getElementById('gpuChart');
+            
+            if (!machines || machines.length === 0) {
+                console.warn('No machine data available for chart');
+                return;
+            }
+
+            // Set a fixed height for the canvas
+            ctx.style.height = '300px';
+
+            // Prepare flattened data for the chart
+            const data = [];
+            
+            // Create a single bar for each GPU
+            machines.forEach(machine => {
+                machine.gpuUsage.forEach((gpu, index) => {
+                    data.push({
+                        label: `${machine.name} (${index})`,
+                        usage: (gpu.used / gpu.total * 100)
+                    });
+                });
+            });
+
+            // Sort by usage
+            data.sort((a, b) => b.usage - a.usage);
+
+            const dataset = {
+                label: 'GPU Memory Usage',
+                data: data.map(d => d.usage),
+                backgroundColor: 'rgba(32, 94, 166, 0.2)',
+                borderColor: 'rgba(32, 94, 166, 1)',
+                borderWidth: 1,
+                borderRadius: 4,
+            };
+
+            try {
+                if (window.gpuChart && window.gpuChart.data) {
+                    window.gpuChart.data.labels = data.map(d => d.label);
+                    window.gpuChart.data.datasets = [dataset];
+                    window.gpuChart.update();
+                } else {
+                    window.gpuChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.map(d => d.label),
+                            datasets: [dataset]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: {
+                                    grid: {
+                                        color: '#333'
+                                    },
+                                    ticks: {
+                                        color: '#CECDC3'
+                                    }
+                                },
+                                y: {
+                                    grid: {
+                                        color: '#333'
+                                    },
+                                    ticks: {
+                                        color: '#CECDC3',
+                                    },
+                                    max: 100,
+                                    title: {
+                                        display: true,
+                                        text: 'GPU Memory Usage (%)',
+                                        color: '#CECDC3'
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false // Hide legend since we only have one dataset
+                                },
+                                title: {
+                                    display: true,
+                                    text: '% GPU Memory Usage',
+                                    color: '#CECDC3'
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error creating or updating chart:', error);
+            }
+        }
+
+        // Function to fetch and display the cluster data
+        async function loadClusterData() {
+            try {
+                const response = await fetch('cluster.txt');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.statusText);
+                }
+                const data = await response.text();
+                parseAndDisplayData(data);
+            } catch (error) {
+                document.getElementById('machines-container').innerHTML = `<p style="color: red; text-align: center;">Error loading data: ${error.message}</p>`;
+                console.error('Fetch error:', error);
+                document.getElementById('last-updated').textContent = `Last Updated: Error`;
+            }
+        }
+
+        // Function to parse the raw data and display it
+        function parseAndDisplayData(rawData) {
+            const machinesContainer = document.getElementById('machines-container');
+            machinesContainer.innerHTML = ''; // Clear any existing content
+
+            // Regular expression to match each machine block
+            const machineRegex = /<\|(\w+)\|>([\s\S]*?)<\/\|\1\|>/g;
+            let match;
+            const machines = [];
+            const chartData = []; // Array to store data for the chart
+
+            // Extract all machine blocks
+            while ((match = machineRegex.exec(rawData)) !== null) {
+                const machineName = match[1];
+                const machineData = match[2].trim();
+                machines.push({ name: machineName, data: machineData });
+            }
+
+            if (machines.length === 0) {
+                document.getElementById('last-updated').innerHTML = `<b>Last Updated</b>: No data available`;
+                return;
+            }
+
+            // Extract the timestamp from the first machine's first line
+            const firstMachine = machines[0];
+            const firstMachineDataLines = firstMachine.data.split('\n');
+            const timestamp = firstMachineDataLines[0].trim();
+            document.getElementById('last-updated').innerHTML = `<b>Last Updated</b>: ${timestamp}`;
+
+            // Get machines data max length
+            let maxLength = 0;
+            machines.forEach(machine => {
+                const lines = machine.data.split('\n');
+                const longestLine = lines.reduce((max, line) => Math.max(max, line.length), 0);
+                maxLength = Math.max(maxLength, longestLine);
+            });
+
+            console.log(maxLength);
+            // Add maxLength spaces to the end of each machine's data
+            machines.forEach(machine => {
+                machine.data += '\n';
+                machine.data += '-'.repeat(maxLength);
+                console.log(machine.data);
+            });
+
+            // Remove the timestamp from the first machine's data
+            machines[0].data = firstMachineDataLines.slice(1).join('\n').trim();
+
+            // Process each machine
+            machines.forEach(machine => {
+                const machineElement = document.createElement('div');
+                machineElement.className = 'machine';
+
+                // Create header with machine name and dots
+                const header = document.createElement('div');
+                header.className = 'machine-header';
+
+                const headerLeft = document.createElement('div');
+                headerLeft.className = 'machine-header-left';
+
+                const title = document.createElement('h3');
+                title.textContent = machine.name;
+                headerLeft.appendChild(title);
+
+                const gpuLines = machine.data.match(/\|\s*\d+\s+NVIDIA(?:\s+GeForce)?\s+(?:RTX|GTX)?\s+\w+/g) || [];
+                const gpuCount = gpuLines.length;
+                const gpuUsage = getGPUUsage(machine.data, gpuCount);
+
+                // Add to chart data
+                chartData.push({
+                    name: machine.name,
+                    gpuUsage: gpuUsage
+                });
+
+                const memoryInfo = document.createElement('div');
+                memoryInfo.className = 'memory-info';
+
+                gpuUsage.forEach((usage, index) => {
+                    const dot = document.createElement('span');
+                    dot.className = 'dot ' + (usage.used > (usage.total * 0.1) ? 'red' : 'green');
+                    dot.title = `GPU ${index}: ${usage.used}/${usage.total} MiB`;
+                    dot.style.marginRight = '10px';
+                    memoryInfo.appendChild(dot);
+
+                    const memText = document.createElement('span');
+                    memText.innerHTML = `${(usage.used/usage.total*100).toFixed(0)}%`;
+                    memText.style.marginRight = '10px';
+                    memoryInfo.appendChild(memText);
+                });
+
+                header.appendChild(headerLeft);
+                header.appendChild(memoryInfo);
+                machineElement.appendChild(header);
+
+                const pre = document.createElement('pre');
+
+                if (machine.data.includes('Error:')) {
+                    const memText = document.createElement('span');
+                    memText.textContent = "Error";
+                    memoryInfo.appendChild(memText);
+                } 
+                pre.textContent = machine.data.trim();
+                machineElement.appendChild(pre);
+
+                machineElement.addEventListener('click', (event) => {
+                    machineElement.classList.toggle('expanded');
+                });
+
+                machinesContainer.appendChild(machineElement);
+            });
+
+            // Create the chart with the collected data
+            createGPUChart(chartData);
+        }
+
+        // Function to calculate GPU memory usage
+        function getGPUUsage(machineData, gpuCount) {
+            const usagePerGPU = Array(gpuCount).fill().map(() => ({
+                used: 0,
+                total: 0
+            }));
+
+            if (gpuCount === 0) {
+                console.warn('No GPUs detected for this machine.');
+                return usagePerGPU;
+            }
+
+            const lines = machineData.split('\n');
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+
+                const gpuMatch = line.match(/\|\s*(\d+)\s+NVIDIA\s+(?:GeForce\s+)?(?:RTX|GTX)?\s+\w+/);
+                if (gpuMatch) {
+                    const gpuId = parseInt(gpuMatch[1], 10);
+
+                    let memoryLine = '';
+                    for (let j = i + 1; j < lines.length; j++) {
+                        memoryLine = lines[j].trim();
+                        if (memoryLine.startsWith('|')) {
+                            break;
+                        }
+                    }
+
+                    const memoryMatch = memoryLine.match(/\|\s*(\d+)MiB\s+\/\s+(\d+)MiB\s+\|/);
+                    if (memoryMatch && gpuId >= 0 && gpuId < gpuCount) {
+                        usagePerGPU[gpuId] = {
+                            used: parseInt(memoryMatch[1], 10),
+                            total: parseInt(memoryMatch[2], 10)
+                        };
+                    }
+                }
+            }
+
+            return usagePerGPU;
+        }
+
+        // Add this new function
+        function setupExpandAllButton() {
+            const expandAllButton = document.getElementById('expand-all');
+            let isExpanded = false;
+
+            expandAllButton.addEventListener('click', () => {
+                const machines = document.querySelectorAll('.machine');
+                isExpanded = !isExpanded;
+                
+                machines.forEach(machine => {
+                    if (isExpanded) {
+                        machine.classList.add('expanded');
+                    } else {
+                        machine.classList.remove('expanded');
+                    }
+                });
+                
+                expandAllButton.textContent = isExpanded ? 'Collapse All -' : 'Expand All +';
+            });
+        }
+
+        // Modify the document.addEventListener line at the bottom to include the new function
+        document.addEventListener('DOMContentLoaded', () => {
+            loadClusterData();  // Load data once on page load
+            setupExpandAllButton();
+        });
+    </script>
+</body>
+</html>
